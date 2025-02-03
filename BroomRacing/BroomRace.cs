@@ -1,4 +1,5 @@
 ﻿using HogWarp.Lib;
+using HogWarp.Lib.Commands;
 using HogWarp.Lib.Game;
 using HogWarp.Lib.Game.Data;
 using HogWarp.Lib.System;
@@ -13,49 +14,112 @@ namespace BroomRacing
         public string Description => "Build Races & Race with others";
         private Server? _server;
 
-        struct RaceRings
+        private struct RaceRings
         {
             public string Name;
             public FTransform[] Rings;
         }
 
-        struct RaceSetups
+        private struct RaceSetups
         {
             public string Name = "";
-            public List<Player> Players = new List<Player>();
-            public Dictionary<Player, FTimespan> PlayerTimes = new Dictionary<Player, FTimespan>();
+            public readonly List<Player> Players = new();
+            public readonly Dictionary<Player, FTimespan> PlayerTimes = new();
 
             public RaceSetups()
             {
             }
         }
 
-        public string racesFilePath = Path.Join("plugins", "BroomRacing", "races.json");
-        public string adminsFilePath = Path.Join("plugins", "BroomRacing", "admins.json");
+        private readonly string _racesFilePath = Path.Join("plugins", "BroomRacing", "races.json");
 
-        List<string> admins = new List<string>();
-        List<RaceRings> races = new List<RaceRings>();
-        List<RaceSetups> activeRaces = new List<RaceSetups>();
+        private List<RaceRings> _races = new();
+        private readonly List<RaceSetups> _activeRaces = new();
 
         public void Initialize(Server server)
         {
             _server = server;
-            _server.ChatEvent += Chat;
             _server.PlayerLeaveEvent += PlayerLeave;
             _server.RegisterMessageHandler(Name, HandleMessage);
+            _server.RegisterCommand("racebuilder", new CommandData()
+            {
+                Name = "racebuilder",
+                Description = "Opens the race builder menu.",
+                Mod = "BroomRacing",
+                Permissions = CommandPermission.OPERATOR,
+                Handlers = new HashSet<CommandDelegate> { (player, args) =>
+                    {
+                        var buffer = new Buffer(2);
+                        var writer = new BufferWriter(buffer);
+                        _server!.PlayerManager.SendTo(player, Name, 34, writer);
+                    }
+                }
+            });
+            _server.RegisterCommand("joinrace", new CommandData()
+            {
+                Name = "joinrace",
+                Description = "Join a race",
+                Mod = "BroomRacing",
+                Permissions = CommandPermission.DEFAULT,
+                Arguments = new HashSet<CommandArgument>
+                {
+                    new()
+                    {
+                        Name = "race_name",
+                        Description = "The name of the race",
+                        Required = true,
+                    }
+                },
+                Handlers = new HashSet<CommandDelegate>
+                {
+                    (player, args) =>
+                    {
+                        if (args.First().Value == null) return;
+
+                        _server!.Information($"Join race: {args.First().Value}");
+
+                        var raceIndex = _races.FindIndex(race => race.Name == args.First().Value?.ToString());
+
+                        if (raceIndex < 0)
+                            player.SendMessage("Could not find race!");
+                        else
+                            SetupRace(player, raceIndex);
+                    }
+                }
+            });
+            _server.RegisterCommand("startrace", new CommandData()
+            {
+                Name = "startrace",
+                Description = "Start the race",
+                Mod = "BroomRacing",
+                Permissions = CommandPermission.DEFAULT,
+                Handlers = new HashSet<CommandDelegate>
+                {
+                    (player, args) =>
+                    {
+                        var activeRaceIndex =
+                            _activeRaces.FindIndex(race => race.Players[0].DiscordId == player.DiscordId);
+
+                        if (activeRaceIndex != -1)
+                            SpawnRace(activeRaceIndex);
+                        else
+                            player.SendMessage("Race not found, or you are not the race host.");
+                    }
+                }
+            });
+
             LoadRaces();
-            LoadAdmins();
         }
 
         public void PlayerLeave(Player player)
         {
             _server!.Information("Player Left!");
             // Remove player from all active Races
-            foreach (var r in activeRaces)
+            foreach (var r in _activeRaces)
             {
                 foreach (var p in r.Players)
                 {
-                    if(p.DiscordId == player.DiscordId)
+                    if (p.DiscordId == player.DiscordId)
                     {
                         r.Players.Remove(p);
                         break;
@@ -64,200 +128,138 @@ namespace BroomRacing
             }
         }
 
-        public void Chat(Player player, string message, ref bool cancel)
-        {
-            if (message == "/racebuilder")
-            {
-                var buffer = new Buffer(2);
-                var writer = new BufferWriter(buffer);
-                _server!.PlayerManager.SendTo(player, Name, 34, writer);
-
-                cancel = true;
-            }
-            else if (message.StartsWith("/joinrace"))
-            {
-                var split = message.Split("/joinrace ");
-                if(split.Length < 2)
-                {
-                    player.SendMessage("Missing race name! /joinrace <race name>");
-                    cancel = true;
-                    return;
-                }
-                _server!.Information($"Join Race: {split[1]}");
-
-                int raceIndex = races.FindIndex(Race => Race.Name == split[1]);
-
-                if (raceIndex < 0)
-                    player.SendMessage("Could not find race");
-                else
-                    SetupRace(player, raceIndex);
-
-                cancel = true;
-            }
-            else if (message == "/startrace")
-            {
-                int activeRaceIndex = activeRaces.FindIndex(Race => Race.Players[0].DiscordId == player.DiscordId);
-
-                if (activeRaceIndex != -1)
-                    SpawnRace(activeRaceIndex);
-                else
-                    player.SendMessage("Race not found, or you are not the race host.");
-
-                cancel = true;
-            }
-        }
-
         public void HandleMessage(Player player, ushort opcode, Buffer buffer)
         {
             var reader = new BufferReader(buffer);
 
-            if(opcode == 32)
+            switch (opcode)
             {
-                RaceRings currentRace;
-
-                reader.Read(out currentRace.Name);
-                reader.ReadVarInt(out var raceSize);
-                raceSize &= 0xFFFF;
-
-                if (raceSize > 0)
+                case 32:
                 {
-                    currentRace.Rings = new FTransform[raceSize];
+                    RaceRings currentRace;
 
-                    for (int i = 0; i < currentRace.Rings.Length; ++i)
+                    reader.Read(out currentRace.Name);
+                    reader.ReadVarInt(out var raceSize);
+                    raceSize &= 0xFFFF;
+
+                    if (raceSize > 0)
                     {
-                        reader.Read(out currentRace.Rings[i]);
-                    }
+                        currentRace.Rings = new FTransform[raceSize];
 
-                    _server!.Information($"Saving Race: {currentRace.Name}");
-                    races.Add(currentRace);
-                    SaveRaces();
+                        for (int i = 0; i < currentRace.Rings.Length; ++i)
+                        {
+                            reader.Read(out currentRace.Rings[i]);
+                        }
+
+                        _server!.Information($"Saving Race: {currentRace.Name}");
+                        _races.Add(currentRace);
+                        SaveRaces();
+                    }
+                    else
+                        player.SendMessage($"Race failed to save, no race rings present.");
+
+                    break;
                 }
-                else
-                    player.SendMessage($"Race failed to save, no race rings present.");
-            }
-            else if (opcode == 33)
-            {
-                SendRaces(player);
-            }
-            else if (opcode == 34)
-            {
-                reader.Read(out int selectedRace);
-                SetupRace(player, selectedRace);
-            }
-            else if (opcode == 35)
-            {
-                reader.Read(out string raceName);
-                reader.Read(out FTimespan raceTime);
-                AddRaceTime(player, raceName, raceTime);
-            }
-            else if (opcode == 36)
-            {
-                reader.Read(out int selectedRace);
-                DeleteRace(player, selectedRace);
+                case 33:
+                    SendRaces(player);
+                    break;
+                case 34:
+                {
+                    reader.Read(out int selectedRace);
+                    SetupRace(player, selectedRace);
+                    break;
+                }
+                case 35:
+                    reader.Read(out string raceName);
+                    reader.Read(out FTimespan raceTime);
+                    AddRaceTime(player, raceName, raceTime);
+                    break;
+                case 36:
+                {
+                    reader.Read(out int selectedRace);
+                    DeleteRace(player, selectedRace);
+                    break;
+                }
             }
         }
 
         public void LoadRaces()
         {
-            _server!.Information("Loading Races...");
-
-            if (File.Exists(racesFilePath))
-            {
-                races = JsonConvert.DeserializeObject<List<RaceRings>>(File.ReadAllText(racesFilePath))!;
-                _server!.Information($"Loaded {races.Count} races");
-            }
-            else
-            {
-                _server!.Warning("No races exist!");
-            }
-        }
-
-        public void LoadAdmins()
-        {
-            _server!.Information("Loading Admins...");
-
-            if (File.Exists(adminsFilePath))
-            {
-                admins = JsonConvert.DeserializeObject<List<string>>(File.ReadAllText(adminsFilePath))!;
-                _server!.Information("Loaded Admins");
-            }
-                
-            else
-                _server!.Warning("No admins exist!");
+            if (!File.Exists(_racesFilePath)) SaveRaces();
+            _races = JsonConvert.DeserializeObject<List<RaceRings>>(File.ReadAllText(_racesFilePath))!;
+            _server!.Information($"Loaded {_races.Count} races");
         }
 
         private void SaveRaces()
         {
-            File.WriteAllText(racesFilePath, JsonConvert.SerializeObject(races, Formatting.Indented));
+            if(!Directory.Exists(Path.Join("plugins", "BroomRacing")))
+                Directory.CreateDirectory(Path.Join("plugins", "BroomRacing"));
+            File.WriteAllText(_racesFilePath, JsonConvert.SerializeObject(_races, Formatting.Indented));
         }
 
         private void SendRaces(Player player)
         {
             var buffer = new Buffer(10000);
             var writer = new BufferWriter(buffer);
-            var isAdmin = false;
-
-            if (admins.Contains(player.DiscordId))
-                isAdmin = true;
+            var isAdmin = _server!.IsOp(player);
 
             writer.Write(isAdmin);
-            writer.WriteVarInt(Convert.ToUInt64(races.Count));
+            writer.WriteVarInt(Convert.ToUInt64(_races.Count));
 
-            foreach(var race in races)
+            foreach (var race in _races)
             {
                 writer.WriteString(race.Name);
             }
 
-            _server!.Information($"Sending Races...");
+            _server!.Information($"Sending races...");
             _server!.PlayerManager.SendTo(player, Name, 33, writer);
         }
 
         private void DeleteRace(Player player, int selectedRace)
         {
             // just double check they are an admin, just in-case...
-            if (admins.Contains(player.DiscordId))
-            {
-                _server!.Information($"Race: {races[selectedRace].Name} deleted");
-                races.RemoveAt(selectedRace);
-                SaveRaces();
-            }
+            if (!_server!.IsOp(player)) return;
+            _server!.Information($"Race: {_races[selectedRace].Name} deleted");
+            _races.RemoveAt(selectedRace);
+            SaveRaces();
         }
 
         private void SetupRace(Player player, int selectedRace)
         {
-            var race = races[selectedRace];
+            var race = _races[selectedRace];
 
             _server!.Information($"Setting up Race: {race.Name}");
 
-            int raceIndex = activeRaces.FindIndex(ActiveRace => ActiveRace.Name == race.Name);
+            var raceIndex = _activeRaces.FindIndex(activeRace => activeRace.Name == race.Name);
 
             if (raceIndex == -1)
             {
-                RaceSetups raceSetup = new RaceSetups();
-                raceSetup.Name = race.Name;
+                var raceSetup = new RaceSetups
+                {
+                    Name = race.Name
+                };
                 raceSetup.Players.Add(player);
 
-                activeRaces.Add(raceSetup);
+                _activeRaces.Add(raceSetup);
 
                 foreach (var serverPlayer in _server!.PlayerManager.Players)
                 {
-                    if (serverPlayer.DiscordId == player.DiscordId)
-                        serverPlayer.SendMessage($"You are race Host type '/startrace' to begin.");
-                    else
-                        serverPlayer.SendMessage($"{race.Name} has been setup, type '/joinrace {race.Name}' to join.");
+                    serverPlayer.SendMessage(serverPlayer.DiscordId == player.DiscordId
+                        ? $"You are race Host type '/startrace' to begin."
+                        : $"{race.Name} has been setup, type '/joinrace {race.Name}' to join.");
                 }
             }
             else
             {
-                int playerIndex = activeRaces[raceIndex].Players.FindIndex(p => p.DiscordId == player.DiscordId);
+                var playerIndex = _activeRaces[raceIndex].Players.FindIndex(p => p.DiscordId == player.DiscordId);
 
                 if (playerIndex != -1)
                     player.SendMessage("You are already in this race.");
                 else
                 {
                     _server!.Information($"Race exists, adding player...");
-                    activeRaces[raceIndex].Players.Add(player);
-                    foreach(var racePlayer in activeRaces[raceIndex].Players)
+                    _activeRaces[raceIndex].Players.Add(player);
+                    foreach (var racePlayer in _activeRaces[raceIndex].Players)
                     {
                         racePlayer.SendMessage($"{player.Name} has joined the race.");
                     }
@@ -270,56 +272,53 @@ namespace BroomRacing
             var buffer = new Buffer(10000);
             var writer = new BufferWriter(buffer);
 
-            int raceIndex = races.FindIndex(Race => Race.Name == activeRaces[activeRaceIndex].Name);
-            var currentRace = races[raceIndex];
+            var raceIndex = _races.FindIndex(race => race.Name == _activeRaces[activeRaceIndex].Name);
+            var currentRace = _races[raceIndex];
 
-            writer.WriteString(races[raceIndex].Name);
-            writer.WriteVarInt(Convert.ToUInt64(races[raceIndex].Rings.Length));
+            writer.WriteString(_races[raceIndex].Name);
+            writer.WriteVarInt(Convert.ToUInt64(_races[raceIndex].Rings.Length));
 
             _server!.Information($"Building Race");
 
-            for (int i = 0; i < currentRace.Rings.Length; ++i)
-            {
-                writer.Write(currentRace.Rings[i]);
-            }
+            foreach (var t in currentRace.Rings) writer.Write(t);
 
-            foreach (var racePlayer in activeRaces[activeRaceIndex].Players)
+            foreach (var racePlayer in _activeRaces[activeRaceIndex].Players)
             {
                 _server!.PlayerManager.SendTo(racePlayer, Name, 32, writer);
-                _server!.Information($"Sending {races[raceIndex].Name} to Player with {races[raceIndex].Rings.Length} rings");
+                _server!.Information(
+                    $"Sending {_races[raceIndex].Name} to Player with {_races[raceIndex].Rings.Length} rings");
             }
         }
 
         private void AddRaceTime(Player player, string raceName, FTimespan raceTime)
         {
-            _server!.Information($"Race Index: {raceName}, Race Time: {raceTime.Minutes}:{raceTime.Seconds}:{raceTime.Milliseconds / 10}");
+            _server!.Information(
+                $"Race Index: {raceName}, Race Time: {raceTime.Minutes}:{raceTime.Seconds}:{raceTime.Milliseconds / 10}");
 
-            int activeRaceIndex = activeRaces.FindIndex(ActiveRace => ActiveRace.Name == raceName);
+            var activeRaceIndex = _activeRaces.FindIndex(activeRace => activeRace.Name == raceName);
 
-            if (activeRaceIndex != -1)
+            if (activeRaceIndex == -1) return;
+            _activeRaces[activeRaceIndex].PlayerTimes.Add(player, raceTime);
+            var raceTimes = _activeRaces[activeRaceIndex].PlayerTimes;
+
+            if (_activeRaces[activeRaceIndex].Players.Count != raceTimes.Count) return;
+            var times = raceTimes.OrderBy(pair => pair.Value.Days)
+                .ThenBy(pair => pair.Value.Hours)
+                .ThenBy(pair => pair.Value.Minutes)
+                .ThenBy(pair => pair.Value.Seconds)
+                .ThenBy(pair => pair.Value.Milliseconds).ToList();
+
+            foreach (var racePlayer in _activeRaces[activeRaceIndex].Players)
             {
-                activeRaces[activeRaceIndex].PlayerTimes.Add(player, raceTime);
-                var raceTimes = activeRaces[activeRaceIndex].PlayerTimes;
-
-                if (activeRaces[activeRaceIndex].Players.Count == raceTimes.Count)
+                racePlayer.SendMessage("Race Times");
+                foreach (var playerTimes in times)
                 {
-                    var times = raceTimes.OrderBy(pair => pair.Value.Days)
-                        .ThenBy(pair => pair.Value.Hours)
-                        .ThenBy(pair => pair.Value.Minutes)
-                        .ThenBy(pair => pair.Value.Seconds)
-                        .ThenBy(pair => pair.Value.Milliseconds).ToList();
-
-                    foreach (var racePlayer in activeRaces[activeRaceIndex].Players)
-                    {
-                        racePlayer.SendMessage("Race Times");
-                        foreach (var playerTimes in times)
-                        {
-                            racePlayer.SendMessage($"{playerTimes.Key.Name} - {playerTimes.Value.Minutes}:{playerTimes.Value.Seconds}:{playerTimes.Value.Milliseconds / 10}");
-                        }
-                    }
-                    activeRaces.RemoveAt(activeRaceIndex);
+                    racePlayer.SendMessage(
+                        $"{playerTimes.Key.Name} - {playerTimes.Value.Minutes}:{playerTimes.Value.Seconds}:{playerTimes.Value.Milliseconds / 10}");
                 }
             }
+
+            _activeRaces.RemoveAt(activeRaceIndex);
         }
     }
 }

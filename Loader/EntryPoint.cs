@@ -1,6 +1,5 @@
 ﻿using HogWarp.Lib.Game;
 using System.Runtime.InteropServices;
-using static HogWarp.Loader.PluginManager;
 using static HogWarp.Loader.Events;
 using HogWarp.Lib;
 using HogWarp.Lib.System;
@@ -24,11 +23,6 @@ namespace HogWarp.Loader
             var playerManager = new PlayerManager(Params.PlayerManagerAddress);
 
             _server = new Server(world, playerManager);
-            
-            if (!System.IO.Directory.Exists("plugins")) System.IO.Directory.CreateDirectory("plugins");
-            LoadFromBase("plugins");
-
-            InitializePlugins(_server);
         }
 
         [UnmanagedCallersOnly]

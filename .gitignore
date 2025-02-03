@@ -266,3 +266,4 @@ FodyWeavers.xsd
 .vs
 bin/
 obj/
+.idea/

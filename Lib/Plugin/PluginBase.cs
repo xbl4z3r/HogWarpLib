@@ -4,7 +4,7 @@
     { 
         string Name { get; }
         string Description { get; }
-
+        
         void Initialize(Server server);
     }
 }

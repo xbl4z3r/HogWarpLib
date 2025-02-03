@@ -1,7 +1,7 @@
 ﻿using System.Reflection;
 using System.Runtime.Loader;
 
-namespace HogWarp.Loader
+namespace HogWarp.Lib
 {
     internal class PluginLoadContext : AssemblyLoadContext
     {

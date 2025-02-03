@@ -1,7 +1,7 @@
-﻿using HogWarp.Lib;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
-namespace HogWarp.Loader
+namespace HogWarp.Lib
 {
     public static class PluginManager
     {
@@ -26,7 +26,7 @@ namespace HogWarp.Loader
 
         public static void LoadFromBase(string relativePath)
         {
-            string root = Path.GetFullPath(Path.GetDirectoryName(typeof(EntryPoint).Assembly.Location!)!);
+            string root = Path.GetFullPath(Path.GetDirectoryName(typeof(PluginManager).Assembly.Location!)!);
             string pluginLocation = Path.GetFullPath(Path.Combine(root, relativePath.Replace('\\', Path.DirectorySeparatorChar)));
 
             var locations = Directory.GetDirectories(pluginLocation);
@@ -36,10 +36,7 @@ namespace HogWarp.Loader
                 {
                     var path = Path.Combine(pluginLocation, location, "Assembly-Plugin.dll");
                     var assembly = LoadPlugin(path);
-                    if (assembly != null)
-                    {
-                        _plugins.AddRange(CreatePlugins(assembly));
-                    }
+                    _plugins.AddRange(CreatePlugins(assembly));
                 }
                 catch( Exception ex ) 
                 {
@@ -53,7 +50,7 @@ namespace HogWarp.Loader
         static Assembly LoadPlugin(string relativePath)
         {
             // Navigate up to the solution root
-            string root = Path.GetFullPath(Path.GetDirectoryName(typeof(EntryPoint).Assembly.Location!)!);
+            string root = Path.GetFullPath(Path.GetDirectoryName(typeof(PluginManager).Assembly.Location!)!);
 
             string pluginLocation = Path.GetFullPath(Path.Combine(root, relativePath.Replace('\\', Path.DirectorySeparatorChar)));
             string rel = Path.GetRelativePath(root, relativePath);
@@ -80,11 +77,32 @@ namespace HogWarp.Loader
                 }
             }
 
-            if (count == 0)
-            {
-                throw new ApplicationException(
-                    $"Can't find any type which implements IPluginBase in {assembly} from {assembly.Location}.");
-            }
+            // if (count == 0)
+            // {
+            //     throw new ApplicationException(
+            //         $"Can't find any type which implements IPluginBase in {assembly} from {assembly.Location}.");
+            //     Serilog.Log.Logger.Warning($"Can't find any type which implements IPluginBase in {assembly} from {assembly.Location}.");
+            //     Serilog.Log.Logger.Warning("Is this a plugin?");
+            // }
+        }
+        
+        /**
+         * Check if a plugin is present by name
+         * @param name The name of the plugin. Warning: This is case-sensitive.
+         */
+        public static bool IsPluginPresent(string name)
+        {
+            return _plugins.Any(p => p.Name == name);
+        }
+        
+        /**
+         * Get a plugin by name 
+         * @param name The name of the plugin. Warning: This is case-sensitive.
+         */
+        public static T GetPlugin<T>(string name) where T : class, IPluginBase
+        {
+            var plugin = _plugins.First(p => p.Name == name);
+            return Unsafe.As<IPluginBase, T>(ref plugin);
         }
     }
 }

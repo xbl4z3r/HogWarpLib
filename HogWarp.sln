@@ -13,6 +13,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sample", "Sample\Sample.csp
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BroomRacing", "BroomRacing\BroomRacing.csproj", "{6B4AAE9F-7291-4569-98B2-38FAB74E8B5F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MinistryOfMagic", "MinistryOfMagic\MinistryOfMagic.csproj", "{38ABB4F1-125F-4A48-9524-1D11AA7E4D56}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeSync", "TimeSync\TimeSync.csproj", "{3C9D0B07-3EFB-46EB-9EAA-0C0DFEB0C265}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +43,14 @@ Global
 		{6B4AAE9F-7291-4569-98B2-38FAB74E8B5F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6B4AAE9F-7291-4569-98B2-38FAB74E8B5F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6B4AAE9F-7291-4569-98B2-38FAB74E8B5F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{38ABB4F1-125F-4A48-9524-1D11AA7E4D56}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{38ABB4F1-125F-4A48-9524-1D11AA7E4D56}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{38ABB4F1-125F-4A48-9524-1D11AA7E4D56}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{38ABB4F1-125F-4A48-9524-1D11AA7E4D56}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3C9D0B07-3EFB-46EB-9EAA-0C0DFEB0C265}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3C9D0B07-3EFB-46EB-9EAA-0C0DFEB0C265}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3C9D0B07-3EFB-46EB-9EAA-0C0DFEB0C265}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3C9D0B07-3EFB-46EB-9EAA-0C0DFEB0C265}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
